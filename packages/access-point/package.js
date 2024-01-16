@@ -19,14 +19,14 @@ Package.onUse(function(api) {
 
   api.use([
     //CFS packages
-    'cfs:base-package@0.0.30',
-    'cfs:file@0.1.16',
+    'cfs:base-package',
+    'cfs:file',
     //Core packages
     'check',
     'ejson',
     //Other packages
-    'cfs:http-methods@0.0.29',
-    'cfs:http-publish@0.0.13'
+    'cfs:http-methods',
+    'cfs:http-publish'
   ]);
 
   api.addFiles([
@@ -47,11 +47,11 @@ Package.onTest(function (api) {
   api.use([
     //CFS packages
     'cfs:access-point',
-    'cfs:standard-packages@0.0.2',
-    'cfs:gridfs@0.0.0',
+    'cfs:standard-packages',
+    'cfs:gridfs',
     //Core packages
     'test-helpers',
-    'http',
+    'http@~2.0.0',
     'tinytest',
     'underscore',
     'ejson',

@@ -1,5 +1,15 @@
+// Hack to fix incorrect AWS loading
+//https://forums.meteor.com/t/error-in-test-mode-on-1-3-typeerror-cannot-read-property-stream-of-undefined/21696/8
+const previousProcessValue = process.browser;
+process.browser = false;
+
 // We use the official aws sdk
-AWS = Npm.require('aws-sdk');
+AWS = {
+  S3: Npm.require('aws-sdk/clients/s3')
+};
+
+// Reset our hack
+process.browser = previousProcessValue;
 
 var validS3ServiceParamKeys = [
   'endpoint',
@@ -115,27 +125,17 @@ FS.Store.S3 = function(name, options) {
       // If the store and key is found return the key
       if (info && info.key) return info.key;
 
-      // Support explicit fileKey function in options
-      //   eg: set to save as just this filename
-      //   fileKey: function(fileObj) { return { fileKey: fileObj.name() }; }
-      //   eg: set to save as just the fileObj._id
-      //   fileKey: function(fileObj) { return { fileKey: fileObj._id }; }
-      //   eg: set to save as a path: <_id>/<name>
-      //   fileKey: function(fileObj) { return { fileKey: fileObj._id + '/' + fileObj.name() }; }
-      if (options && options.fileKey && typeof options.fileKey === 'function') {
-        return options.fileKey(fileObj);
-      }
-      // Support for an extension on the fileObj itself
-      if (fileObj && fileObj.fileKey) {
-        if (typeof fileObj.fileKey === 'string') return fileObj.fileKey;
-        if (typeof fileObj.fileKey === 'function') return fileObj.fileKey();
-      }
-
       var filename = fileObj.name();
       var filenameInStore = fileObj.name({store: name});
 
       // If no store key found we resolve / generate a key
       return fileObj.collectionName + '/' + fileObj._id + '-' + (filenameInStore || filename);
+    },
+    getDirectUrl: function(fileKey, options) {
+        return S3.getSignedUrl('getObject', {
+            Bucket: bucket,
+            Key: folder + fileKey,
+        });
     },
     createReadStream: function(fileKey, options) {
 
@@ -184,6 +184,17 @@ FS.Store.S3 = function(name, options) {
     },
     watch: function() {
       throw new Error("S3 storage adapter does not support the sync option");
-    }
+    },
+      copy: function(sourceKey, destinationKey, callback) {
+        console.log('S3 copy ', bucket, sourceKey, destinationKey);
+          S3.copyObject({
+              Bucket: bucket,
+              CopySource: bucket + '/' + sourceKey,
+              Key: destinationKey,
+              ACL: defaultAcl
+          }, function (error) {
+              callback(error, !error ? destinationKey : null);
+          });
+      }
   });
 };

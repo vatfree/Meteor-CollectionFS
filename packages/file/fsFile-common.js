@@ -58,7 +58,6 @@ FS.File.prototype.attachData = function fsFileAttachData(data, options, callback
   }
   // Blob
   else if (typeof Blob !== "undefined" && data instanceof Blob) {
-    self.name(data.name);
     self.updatedAt(new Date());
     self.size(data.size);
     setData(data.type);
@@ -275,7 +274,7 @@ FS.File.prototype.update = function(modifier, options, callback) {
   }
 
   // Call collection update - File record
-  return self.collection.files.update({_id: self._id}, modifier, options, function(err, count) {
+  return self.collection.files.update(self._id, modifier, options, function(err, count) {
     // Update the fileRecord if it was changed and on the client
     // The server-side methods will pull the fileRecord if needed
     if (count > 0 && Meteor.isClient)
@@ -397,6 +396,21 @@ function checkContentType(fsFile, storeName, startOfType) {
  */
 FS.File.prototype.isImage = function(options) {
   return checkContentType(this, (options || {}).store, 'image/');
+};
+
+/**
+ * @method FS.File.prototype.isPDF Is it a pdf file?
+ * @public
+ * @param {object} [options]
+ * @param {string} [options.store] The store we're interested in
+ *
+ * Returns true if the copy of this file in the specified store has a pdf
+ * content type. If the file object is unmounted or doesn't have a copy for
+ * the specified store, or if you don't specify a store, this method checks
+ * the content type of the original file.
+ */
+FS.File.prototype.isPDF = function(options) {
+  return checkContentType(this, (options || {}).store, 'application/pdf');
 };
 
 /**
@@ -685,65 +699,6 @@ FS.File.prototype.updatedAt = function(value, options) {
   }
 };
 
-/**
- * @method FS.File.onStoredCallback
- * @summary Calls callback when the file is fully stored to the specify storeName
- * @public
- * @param {String} [storeName] - The name of the file store we want to get called when stored.
- * @param {function} [callback]
- */
-FS.File.prototype.onStoredCallback = function (storeName, callback) {
-  // Check file is not already stored
-  if (this.hasStored(storeName)) {
-    callback();
-    return;
-  }
-  if (Meteor.isServer) {
-    // Listen to file stored events
-    // TODO Require thinking whether it is better to use observer for case of using multiple application instances, Ask for same image url while upload is being done.
-    this.on('stored', function (newStoreName) {
-      // If stored is completed to the specified store call callback
-      if (storeName === newStoreName) {
-        // Remove the specified file stored listener
-        this.removeListener('stored', arguments.callee);
-        callback();
-      }
-    }.bind(this)
-    );
-  } else {
-    var fileId = this._id,
-        collectionName = this.collectionName;
-    // Wait for file to be fully uploaded
-    Tracker.autorun(function (c) {
-      Meteor.call('_cfs_returnWhenStored', collectionName, fileId, storeName, function (error, result) {
-        if (result && result === true) {
-          c.stop();
-          callback();
-        } else {
-          Meteor.setTimeout(function () {
-            c.invalidate();
-          }, 100);
-        }
-      });
-    });
-  }
-};
-
-/**
- * @method FS.File.onStored
- * @summary Function that returns when the file is fully stored to the specify storeName
- * @public
- * @param {String} storeName - The name of the file store we want to get called when stored.
- *
- * Function that returns when the file is fully stored to the specify storeName.
- *
- * For example needed if wanted to save the direct link to a file on s3 when fully uploaded.
- */
-FS.File.prototype.onStored = function (arguments) {
-  var onStoredSync = Meteor.wrapAsync(this.onStoredCallback);
-  return onStoredSync.call(this, arguments);
-};
-
 function isBasicObject(obj) {
   return (obj === Object(obj) && Object.getPrototypeOf(obj) === Object.prototype);
 }
@@ -761,5 +716,3 @@ if (typeof Object.getPrototypeOf !== "function") {
     };
   }
 }
-
-

@@ -44,6 +44,10 @@ FS.Collection.prototype.insert = function(fileRef, callback) {
 
     // Set collection name
     fileObj.collectionName = self.name;
+    // this is only available on the server, but makes sure the node option is set even in async node function callbacks
+    if (self.options && self.options.serverNode) {
+        fileObj.node = self.options.serverNode;
+    }
 
     // Insert the file into db
     // We call cloneFileRecord as an easy way of extracting the properties

@@ -5,15 +5,15 @@ Package.describe({
 });
 
 Package.onUse(function(api) {
-  api.versionsFrom('1.0');
+  api.versionsFrom(['1.0', '2.0']);
 
   api.use([
-    'cfs:base-package@0.0.30',
-    'cfs:tempstore@0.1.4',
-    'cfs:file@0.1.16',
-    'cfs:access-point@0.1.49',
-    'cfs:power-queue@0.9.11',
-    'cfs:reactive-list@0.0.9'
+    'cfs:base-package',
+    'cfs:tempstore',
+    'cfs:file',
+    'cfs:access-point',
+    'cfs:power-queue',
+    'cfs:reactive-list'
   ]);
 
   api.addFiles([

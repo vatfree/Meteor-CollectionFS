@@ -85,6 +85,20 @@ FS.File.prototype.createReadStream = function(storeName) {
   }
 };
 
+FS.File.prototype.getDirectUrl = function(storeName) {
+    var self = this;
+
+    // Stream from the store using storage adapter
+    if (self.isMounted()) {
+        var storage = self.collection.storesLookup[storeName] || self.collection.primaryStore;
+        FS.debug && console.log("fileObj.createReadStream creating read stream for store", storage.name);
+        // return stream
+        return storage.adapter.getDirectUrl(self);
+    } else {
+        throw new Meteor.Error('File not mounted');
+    }
+};
+
 /**
  * @method FS.File.prototype.createWriteStream
  * @public
@@ -123,7 +137,7 @@ FS.File.prototype.createWriteStream = function(storeName) {
  * @public
  * @returns {FS.File} The new FS.File instance
  */
-FS.File.prototype.copy = function() {
+FS.File.prototype.copy = function(newMetaData) {
   var self = this;
 
   if (!self.isMounted()) {
@@ -135,6 +149,13 @@ FS.File.prototype.copy = function() {
 
   // Remove _id and copy keys from the file record
   delete fileRecord._id;
+
+  // replace the data of the file with the new meta data
+  if (newMetaData) {
+    for (var name in newMetaData) {
+      fileRecord[name] = newMetaData[name];
+    }
+  }
 
   // Insert directly; we don't have access to "original" in this case
   var newId = self.collection.files.insert(fileRecord);
@@ -162,6 +183,7 @@ FS.File.prototype.copy = function() {
         delete newFile.copies[name].key;
         mod = mod || {};
         mod["copies." + name + ".key"] = copyStoreData(newFile, name, oldKey);
+        mod.uploadedAt = new Date();
       }
     }
   }
@@ -200,24 +222,6 @@ Meteor.methods({
     }
 
     return result;
-  },
-  // Helper function that checks whether given fileId from collectionName
-  //  Is fully uploaded to specify storeName.
-  '_cfs_returnWhenStored' : function (collectionName, fileId, storeName) {
-    check(collectionName, String);
-    check(fileId, String);
-    check(storeName, String);
-
-    var collection = FS._collections[collectionName];
-    if (!collection) {
-      return Meteor.Error('_cfs_returnWhenStored: FSCollection name not exists');
-    }
-
-    var file = collection.findOne({_id: fileId});
-    if (!file) {
-      return Meteor.Error('_cfs_returnWhenStored: FSFile not exists');
-    }
-    return file.hasStored(storeName);
   }
 });
 
@@ -232,21 +236,26 @@ function _copyStoreData(fileObj, storeName, sourceKey, callback) {
     throw new Error(storeName + " is not a valid store name");
   }
 
-  // We want to prevent beforeWrite and transformWrite from running, so
-  // we interact directly with the store.
-  var destinationKey = storage.adapter.fileKey(fileObj);
-  var readStream = storage.adapter.createReadStreamForFileKey(sourceKey);
-  var writeStream = storage.adapter.createWriteStreamForFileKey(destinationKey);
+    var destinationKey = storage.adapter.fileKey(fileObj);
+    if (storage.adapter.copyForFileKey) {
+        // We have a native storage adapter copy function, this is much more efficient than doing this ourselves
+        storage.adapter.copyForFileKey(sourceKey, destinationKey, callback);
+    } else {
+        // We want to prevent beforeWrite and transformWrite from running, so
+        // we interact directly with the store.
+        var readStream = storage.adapter.createReadStreamForFileKey(sourceKey);
+        var writeStream = storage.adapter.createWriteStreamForFileKey(destinationKey);
 
-  writeStream.once('stored', function(result) {
-    callback(null, result.fileKey);
-  });
+        writeStream.once('stored', function(result) {
+            callback(null, result.fileKey);
+        });
 
-  writeStream.once('error', function(error) {
-    callback(error);
-  });
+        writeStream.once('error', function(error) {
+            callback(error);
+        });
 
-  readStream.pipe(writeStream);
+        readStream.pipe(writeStream);
+    }
 }
 var copyStoreData = Meteor.wrapAsync(_copyStoreData);
 

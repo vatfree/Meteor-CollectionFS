@@ -1,7 +1,7 @@
 Package.describe({
   git: 'https://github.com/CollectionFS/Meteor-cfs-file.git',
   name: 'cfs:file',
-  version: '0.1.17',
+  version: '0.1.19',
   summary: 'CollectionFS, FS.File object'
 });
 
@@ -10,23 +10,23 @@ Npm.depends({
 });
 
 Package.onUse(function(api) {
-  api.versionsFrom('1.0');
+  api.versionsFrom(['1.0', '2.0']);
 
   // This imply is needed for tests, and is technically probably correct anyway.
   api.imply([
-    'cfs:base-package@0.0.30'
+    'cfs:base-package'
   ]);
 
   api.use([
-    'cfs:base-package@0.0.30',
-    'cfs:storage-adapter@0.2.1',
+    'cfs:base-package',
+    'cfs:storage-adapter',
     'tracker',
     'check',
     'ddp',
     'mongo',
-    'http',
-    'cfs:data-man@0.0.6',
-    'raix:eventemitter@0.1.1'
+    'http@~2.0.0',
+    'cfs:data-man',
+    'raix:eventemitter'
   ]);
 
   api.addFiles([
@@ -41,12 +41,12 @@ Package.onUse(function(api) {
 
 Package.onTest(function (api) {
   api.use([
-    'cfs:standard-packages@0.0.0',
-    'cfs:gridfs@0.0.0',
-    'tinytest@1.0.0',
-    'http@1.0.0',
-    'test-helpers@1.0.0',
-    'cfs:http-methods@0.0.29'
+    'cfs:standard-packages',
+    //'cfs:gridfs@0.0.0',
+    'tinytest',
+    'http@~2.0.0',
+    'test-helpers',
+    'cfs:http-methods'
   ]);
 
   api.addFiles([

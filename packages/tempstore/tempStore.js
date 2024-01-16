@@ -23,19 +23,19 @@ var CombinedStream = Npm.require('combined-stream');
  * @property FS.TempStore
  * @type {object}
  * @public
- * @summary An event emitter
+ * *it's an event emitter*
  */
 FS.TempStore = new EventEmitter();
 
 // Create a tracker collection for keeping track of all chunks for any files that are currently in the temp store
-var tracker = FS.TempStore.Tracker = new Mongo.Collection('cfs._tempstore.chunks');
+var tracker = FS.TempStore.Tracker = new Mongo.Collection('cfs._tempstore.chunks' + (Meteor.settings.nodeId ? '.' + Meteor.settings.nodeId : "") + (process.env.HOSTNAME ? process.env.HOSTNAME : ""));
 
 /**
  * @property FS.TempStore.Storage
  * @type {StorageAdapter}
  * @namespace FS.TempStore
  * @private
- * @summary This property is set to either `FS.Store.FileSystem` or `FS.Store.GridFS`
+ * This property is set to either `FS.Store.FileSystem` or `FS.Store.GridFS`
  *
  * __When and why:__
  * We normally default to `cfs-filesystem` unless its not installed. *(we default to gridfs if installed)*
@@ -130,7 +130,7 @@ _fileReference = function(fileObj, chunk, existing) {
       name: _chunkPath(chunk)
     },
     copies: {
-      _tempstore: {
+      [this.name]: {
         key: existing && existing.keys[chunk]
       }
     }
@@ -190,7 +190,7 @@ FS.TempStore.removeFile = function fsTempStoreRemoveFile(fileObj) {
 
     // Unlink each file
     FS.Utility.each(chunkInfo.keys || {}, function (key, chunk) {
-      var fileKey = _fileReference(fileObj, chunk, chunkInfo);
+      var fileKey = _fileReference.call(FS.TempStore.Storage, fileObj, chunk, chunkInfo);
       FS.TempStore.Storage.adapter.remove(fileKey, FS.Utility.noop);
     });
 
@@ -203,7 +203,7 @@ FS.TempStore.removeFile = function fsTempStoreRemoveFile(fileObj) {
 /**
  * @method FS.TempStore.removeAll
  * @public
- * @summary This function removes all files from tempstorage - it cares not if file is
+ * This function removes all files from tempstorage - it cares not if file is
  * already removed or not found, goal is reached anyway.
  */
 FS.TempStore.removeAll = function fsTempStoreRemoveAll() {
@@ -215,7 +215,7 @@ FS.TempStore.removeAll = function fsTempStoreRemoveAll() {
   tracker.find().forEach(function (chunkInfo) {
     // Unlink each file
     FS.Utility.each(chunkInfo.keys || {}, function (key, chunk) {
-      var fileKey = _fileReference({_id: chunkInfo.fileId, collectionName: chunkInfo.collectionName}, chunk, chunkInfo);
+      var fileKey = _fileReference.call(FS.TempStore.Storage, {_id: chunkInfo.fileId, collectionName: chunkInfo.collectionName}, chunk, chunkInfo);
       FS.TempStore.Storage.adapter.remove(fileKey, FS.Utility.noop);
     });
 
@@ -281,64 +281,55 @@ FS.TempStore.createWriteStream = function(fileObj, options) {
   // string - if a storage adapter wants to sync its data to the other SA's
 
   // Find a nice location for the chunk data
-  var fileKey = _fileReference(fileObj, chunkNum);
+  var fileKey = _fileReference.call(FS.TempStore.Storage, fileObj, chunkNum);
 
   // Create the stream as Meteor safe stream
   var writeStream = FS.TempStore.Storage.adapter.createWriteStream(fileKey);
 
   // When the stream closes we update the chunkCount
   writeStream.safeOn('stored', function(result) {
-    // Save key in tracker document
-    var setObj = {};
-    setObj['keys.' + chunkNum] = result.fileKey;
-    tracker.update(selector, {$set: setObj});
+    try {
+        // Save key in tracker document
+        var setObj = {};
+        setObj['keys.' + chunkNum] = result.fileKey;
+        tracker.update(selector, {$set: setObj});
 
-    var temp = tracker.findOne(selector);
+        // Get updated chunkCount
+        var chunkCount = FS.Utility.size(tracker.findOne(selector).keys);
 
-    if (!temp) {
-      FS.debug && console.log('NOT FOUND FROM TEMPSTORE => EXIT (REMOVED)');
-      return;
-    }
+        // Progress
+        self.emit('progress', fileObj, chunkNum, chunkCount, chunkSum, result);
 
-    // Get updated chunkCount
-    var chunkCount = FS.Utility.size(temp.keys);
+        // If upload is completed
+        if (chunkCount === chunkSum) {
+            // We no longer need the chunk info
+            var modifier = { $set: {}, $unset: {chunkCount: 1, chunkSum: 1, chunkSize: 1} };
 
-    // Progress
-    self.emit('progress', fileObj, chunkNum, chunkCount, chunkSum, result);
+            // Check if the file has been uploaded before
+            if (typeof fileObj.uploadedAt === 'undefined') {
+                // We set the uploadedAt date
+                modifier.$set.uploadedAt = new Date();
+            } else {
+                // We have been uploaded so an event were file data is updated is
+                // called synchronizing - so this must be a synchronizedAt?
+                modifier.$set.synchronizedAt = new Date();
+            }
 
-    var modifier = { $set: {} };
-    if (!fileObj.instance_id) {
-      modifier.$set.instance_id = process.env.COLLECTIONFS_ENV_NAME_UNIQUE_ID ? process.env[process.env.COLLECTIONFS_ENV_NAME_UNIQUE_ID] : process.env.METEOR_PARENT_PID;
-    }
+            // Update the fileObject
+            fileObj.update(modifier);
 
-    // If upload is completed
-    if (chunkCount === chunkSum) {
-      // We no longer need the chunk info
-      modifier.$unset = {chunkCount: 1, chunkSum: 1, chunkSize: 1};
+            // Fire ending events
+            var eventName = isStoreSync ? 'synchronized' : 'stored';
+            self.emit(eventName, fileObj, result);
 
-      // Check if the file has been uploaded before
-      if (typeof fileObj.uploadedAt === 'undefined') {
-        // We set the uploadedAt date
-        modifier.$set.uploadedAt = new Date();
-      } else {
-        // We have been uploaded so an event were file data is updated is
-        // called synchronizing - so this must be a synchronizedAt?
-        modifier.$set.synchronizedAt = new Date();
-      }
-
-      // Update the fileObject
-      fileObj.update(modifier);
-
-      // Fire ending events
-      var eventName = isStoreSync ? 'synchronized' : 'stored';
-      self.emit(eventName, fileObj, result);
-
-      // XXX is emitting "ready" necessary?
-      self.emit('ready', fileObj, chunkCount, result);
-    } else {
-      // Update the chunkCount on the fileObject
-      modifier.$set.chunkCount = chunkCount;
-      fileObj.update(modifier);
+            // XXX is emitting "ready" necessary?
+            self.emit('ready', fileObj, chunkCount, result);
+        } else {
+            // Update the chunkCount on the fileObject
+            fileObj.update({ $set: {chunkCount: chunkCount} });
+        }
+    } catch(e) {
+      console.error(e);
     }
   });
 
@@ -373,8 +364,11 @@ FS.TempStore.createReadStream = function(fileObj) {
 
   function getNextStreamFunc(chunk) {
     return Meteor.bindEnvironment(function(next) {
-      var fileKey = _fileReference(fileObj, chunk);
+      var fileKey = _fileReference.call(FS.TempStore.Storage, fileObj, chunk);
       var chunkReadStream = FS.TempStore.Storage.adapter.createReadStream(fileKey);
+      chunkReadStream.on('error', function(err) {
+          console.error(err);
+      });
       next(chunkReadStream);
     }, function (error) {
       throw error;
@@ -383,6 +377,9 @@ FS.TempStore.createReadStream = function(fileObj) {
 
   // Make a combined stream
   var combinedStream = CombinedStream.create();
+  combinedStream.on('error', function(err) {
+    console.error(err);
+  });
 
   // Add each chunk stream to the combined stream when the previous chunk stream ends
   var currentChunk = 0;

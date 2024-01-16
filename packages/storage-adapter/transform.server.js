@@ -1,7 +1,7 @@
-/* global FS */
+/* global FS, gm */
 
 var PassThrough = Npm.require('stream').PassThrough;
-var lengthStream = Npm.require('length-stream');
+var streamLength = Npm.require("stream-length");
 
 FS.Transform = function(options) {
   var self = this;
@@ -22,7 +22,16 @@ FS.Transform = function(options) {
 };
 
 // Allow packages to add scope
-FS.Transform.scope = {};
+FS.Transform.scope = {
+// Deprecate gm scope:
+  gm: function(source, height, color) {
+    console.warn('Deprecation notice: `this.gm` is deprecating in favour of the general global `gm` scope');
+    if (typeof gm !== 'function')
+      throw new Error('No graphicsmagick package installed, `gm` not found in scope, eg. `cfs-graphicsmagick`');
+    return gm(source, height, color);
+  }
+// EO Deprecate gm scope
+};
 
 // The transformation stream triggers an "stored" event when data is stored into
 // the storage adapter
@@ -67,11 +76,11 @@ FS.Transform.prototype.createWriteStream = function(fileObj) {
   // size and not the transformed file size.
   if (!fileObj.size()) {
     destinationStream = addPassThrough(destinationStream, function (ptStream, originalStream) {
-      var lstream = lengthStream(function (fileSize) {
+      var lstream = streamLength(ptStream, {}, function (err, fileSize) {
         fileObj.size(fileSize, {save: false});
       });
 
-      ptStream.pipe(lstream).pipe(originalStream);
+      ptStream.pipe(originalStream);
     });
   }
 
@@ -113,6 +122,9 @@ function addPassThrough(stream, func) {
   // We pass on the special "stored" event for those listening
   stream.on('stored', function(result) {
     pts.emit('stored', result);
+  });
+  stream.on('error', function(err) {
+    console.error(err);
   });
   func(pts, stream);
   return pts;

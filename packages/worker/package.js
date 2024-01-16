@@ -6,16 +6,18 @@ Package.describe({
 });
 
 Package.onUse(function(api) {
+  api.versionsFrom(['1.0', '2.0']);
+
   api.use([
-    'cfs:base-package@0.0.30',
-    'cfs:tempstore@0.1.6',
-    'cfs:storage-adapter@0.2.1'
+    'cfs:base-package',
+    'cfs:tempstore',
+    'cfs:storage-adapter'
   ]);
 
   api.use([
-    'livedata@1.0.0',
-    'mongo-livedata@1.0.0',
-    'cfs:power-queue@0.9.11'
+    'livedata',
+    'mongo-livedata',
+    'cfs:power-queue'
   ]);
 
   api.addFiles([
@@ -23,7 +25,7 @@ Package.onUse(function(api) {
   ], 'server');
 });
 
-// Package.on_test(function (api) {
+// Package.onTest(function (api) {
 //   api.use('cfs:standard-packages@0.0.0');
 
 //   api.use('test-helpers', 'server');

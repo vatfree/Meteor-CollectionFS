@@ -106,14 +106,6 @@ FS.Collection = function(name, options) {
       return result;
     }
   };
-  
-  if(self.options.idGeneration) _filesOptions.idGeneration = self.options.idGeneration;
-
-  // Enable specifying an alternate driver, to change where the filerecord is stored
-  // Drivers can be created with MongoInternals.RemoteCollectionDriver()
-  if(self.options._driver){
-    _filesOptions._driver = self.options._driver;
-  }
 
   // Create the 'cfs.' ++ ".filerecord" and use fsFile
   var collectionName = 'cfs.' + name + '.filerecord';
@@ -134,14 +126,33 @@ FS.Collection = function(name, options) {
   FS._collections[name] = this;
 
   // Set up observers
-  Meteor.isServer && FS.FileWorker && FS.FileWorker.observe(this);
+  if (Meteor.isServer && FS.FileWorker) {
+    var setupObservers = function() {
+      FS.FileWorker.observe(this);
 
-  // Emit "removed" event on collection
-  self.files.find().observe({
-    removed: function(fileObj) {
-      self.emit('removed', fileObj);
+      // Emit "removed" event on collection
+      self.files.find({ deleted: true }).observe({
+        added: function(fileObj) {
+          self.emit('removed', fileObj);
+          fileObj.remove();
+        },
+        changed: function(fileObj) {
+          if (fileObj.deleted === true) {
+            self.emit('removed', fileObj);
+            fileObj.remove();
+          }
+        }
+      });
     }
-  });
+    if (Meteor.settings && Meteor.settings.cfs && Meteor.settings.cfs.deferObservers) {
+      Meteor.defer(() => {
+        setupObservers.call(this);
+      });
+    } else {
+      setupObservers.call(this);
+    }
+  }
+
 
   // Emit events based on TempStore events
   if (FS.TempStore) {

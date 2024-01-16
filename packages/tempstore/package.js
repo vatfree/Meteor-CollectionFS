@@ -10,19 +10,21 @@ Npm.depends({
 });
 
 Package.onUse(function(api) {
-  api.use(['cfs:base-package@0.0.30', 'cfs:file@0.1.16', 'ecmascript@0.1.0']);
+  api.versionsFrom(['1.0','2.0']);
 
-  api.use('cfs:filesystem@0.1.2', { weak: true });
-  api.use('cfs:gridfs@0.0.30', { weak: true });
+  api.use(['cfs:base-package', 'cfs:file']);
 
-  api.use('mongo@1.0.0');
+  api.use('cfs:filesystem', { weak: true });
+  //api.use('cfs:gridfs@0.0.30', { weak: true });
+
+  api.use('mongo');
 
   api.addFiles([
     'tempStore.js'
   ], 'server');
 });
 
-// Package.on_test(function (api) {
+// Package.onTest(function (api) {
 //   api.use('collectionfs');
 //   api.use('test-helpers', 'server');
 //   api.use(['tinytest', 'underscore', 'ejson', 'ordered-dict',

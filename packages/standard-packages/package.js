@@ -1,7 +1,7 @@
 Package.describe({
   git: 'https://github.com/CollectionFS/Meteor-CollectionFS.git',
   name: 'cfs:standard-packages',
-  version: '0.5.10',
+  version: '0.5.11',
   summary: 'Filesystem for Meteor, collectionFS'
 });
 
@@ -9,19 +9,19 @@ Package.onUse(function(api) {
   // Rig the collectionFS package v2
   api.imply([
     // Base util rigs the basis for the FS scope and some general helper mehtods
-    'cfs:base-package@0.0.30',
+    'cfs:base-package',
     // Want to make use of the file object and its api, yes!
-    'cfs:file@0.1.17',
+    'cfs:file',
     // Add the FS.Collection to keep track of everything
-    'cfs:collection@0.5.5',
+    'cfs:collection',
     // Support filters for easy rules about what may be inserted
-    'cfs:collection-filters@0.2.4',
+    'cfs:collection-filters',
     // Add the option to have ddp and http access point
-    'cfs:access-point@0.1.49',
+    'cfs:access-point',
     // We might also want to have the server create copies of our files?
-    'cfs:worker@0.1.5',
+    'cfs:worker',
     // By default we want to support uploads over HTTP
-    'cfs:upload-http@0.0.20',
+    'cfs:upload-http',
   ]);
 });
 

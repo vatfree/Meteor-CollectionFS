@@ -2,9 +2,9 @@ function equals(a, b) {
   return !!(EJSON.stringify(a) === EJSON.stringify(b));
 }
 
-var fileCollection = new FS.Collection('files', {
+var fileCollection = new FS.Collection('cfs_files_test', {
 	stores: [
-		new FS.Store.GridFS('files')
+		new FS.Store.GridFS('cfs_files_test')
 	]
 });
 

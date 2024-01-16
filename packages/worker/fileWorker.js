@@ -18,24 +18,33 @@ FS.FileWorker = {};
  * temp files at the appropriate times.
  */
 FS.FileWorker.observe = function(fsCollection) {
+  var startingUp = true;
 
   // Initiate observe for finding newly uploaded/added files that need to be stored
   // per store.
   FS.Utility.each(fsCollection.options.stores, function(store) {
     var storeName = store.name;
-    fsCollection.files.find(getReadyQuery(storeName), {
+    var serverNode = store.serverNode || "";
+    fsCollection.files.find(getReadyQuery(storeName, serverNode), {
       fields: {
         copies: 0
       }
     }).observe({
       added: function(fsFile) {
+        if (startingUp) {
+          return false;
+        }
+        // reset fsFile object, might have been cached
+        fsFile = new FS.File(fsFile);
         // added will catch fresh files
-        FS.debug && console.log("FileWorker ADDED - calling saveCopy", storeName, "for", fsFile._id);
+        FS.debug && console.log("FileWorker ADDED - calling saveCopy", storeName, "on", serverNode, "for", fsFile._id);
         saveCopy(fsFile, storeName);
       },
       changed: function(fsFile) {
+          // reset fsFile object, might have been cached
+          fsFile = new FS.File(fsFile);
         // changed will catch failures and retry them
-        FS.debug && console.log("FileWorker CHANGED - calling saveCopy", storeName, "for", fsFile._id);
+        FS.debug && console.log("FileWorker CHANGED - calling saveCopy", storeName, "on", serverNode, "for", fsFile._id);
         saveCopy(fsFile, storeName);
       }
     });
@@ -43,30 +52,46 @@ FS.FileWorker.observe = function(fsCollection) {
 
   // Initiate observe for finding files that have been stored so we can delete
   // any temp files
+
   fsCollection.files.find(getDoneQuery(fsCollection.options.stores)).observe({
     added: function(fsFile) {
-      FS.debug && console.log("FileWorker ADDED - calling deleteChunks for", fsFile._id);
-      try {
-        FS.TempStore.removeFile(fsFile);
-      } catch(err) {
-        console.error(err);
+      if (startingUp) {
+        return false;
       }
+      // reset fsFile object, might have been cached
+      fsFile = new FS.File(fsFile);
+      FS.debug && console.log("FileWorker ADDED - calling deleteChunks for", fsFile._id);
+      FS.TempStore.removeFile(fsFile);
     }
   });
 
   // Initiate observe for catching files that have been removed and
-  // removing the data from all stores as well
-  fsCollection.files.find().observe({
-    removed: function(fsFile) {
-      FS.debug && console.log('FileWorker REMOVED - removing all stored data for', fsFile._id);
-      //remove from temp store
-      FS.TempStore.removeFile(fsFile);
-      //delete from all stores
-      FS.Utility.each(fsCollection.options.stores, function(storage) {
+  let removeFile = function (fsFile) {
+    // reset fsFile object, might have been cached
+    fsFile = new FS.File(fsFile);
+
+    FS.debug && console.log('FileWorker REMOVED - removing all stored data for', fsFile._id);
+    //remove from temp store
+    FS.TempStore.removeFile(fsFile);
+    //delete from all stores
+    FS.Utility.each(fsCollection.options.stores, function (storage) {
         storage.adapter.remove(fsFile);
-      });
+    });
+    fsFile.remove();
+  };
+  // removing the data from all stores as well
+  fsCollection.files.find({ deleted: true }).observe({
+    added: function(fsFile) {
+      removeFile(fsFile);
+    },
+    changed: function(fsFile) {
+      if (fsFile.deleted === true) {
+        removeFile(fsFile);
+      }
     }
   });
+
+  startingUp = false;
 };
 
 /**
@@ -84,10 +109,13 @@ FS.FileWorker.observe = function(fsCollection) {
  *    'failures.copies.storeName.doneTrying': {$ne: true}
  *  }
  */
-function getReadyQuery(storeName) {
+function getReadyQuery(storeName, serverNode) {
   var selector = {uploadedAt: {$exists: true}};
   selector['copies.' + storeName] = null;
   selector['failures.copies.' + storeName + '.doneTrying'] = {$ne: true};
+  if (serverNode) {
+    selector['node'] = serverNode;
+  }
   return selector;
 }
 
@@ -128,7 +156,7 @@ function getReadyQuery(storeName) {
  */
 function getDoneQuery(stores) {
   var selector = {
-    $and: [{chunks: {$exists: true}}]
+    $and: []
   };
 
   // Add conditions for all defined stores
@@ -144,8 +172,11 @@ function getDoneQuery(stores) {
     tempCond = {};
     tempCond['failures.copies.' + storeName + '.doneTrying'] = true;
     copyCond.$or.push(tempCond);
+    if (store.serverNode) {
+        copyCond['node'] = store.serverNode;
+    }
     selector.$and.push(copyCond);
-  })
+  });
 
   return selector;
 }
@@ -173,13 +204,12 @@ function saveCopy(fsFile, storeName, options) {
 
   FS.debug && console.log('saving to store ' + storeName);
 
-  try {
-    var writeStream = storage.adapter.createWriteStream(fsFile);
-    var readStream = FS.TempStore.createReadStream(fsFile);
+  var writeStream = storage.adapter.createWriteStream(fsFile);
+  var readStream = FS.TempStore.createReadStream(fsFile);
+  readStream.on('error', function(err) {
+      console.error(err);
+  });
 
-    // Pipe the temp data into the storage adapter
-    readStream.pipe(writeStream);
-  } catch(err) {
-    console.error(err);
-  }
+  // Pipe the temp data into the storage adapter
+  readStream.pipe(writeStream);
 }

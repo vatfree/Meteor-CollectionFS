@@ -6,7 +6,7 @@ Package.describe({
 });
 
 Npm.depends({
-  'aws-sdk': "2.0.23",
+  'aws-sdk': "2.173.0",
   // 'temp': '0.7.0', // used by the s3.indirect.streaming.js
   // 'through2': '0.4.1', // used by the s3.upload.stream.js
   // 'backoff': '2.3.0', // used by the s3.upload.stream.js
@@ -14,9 +14,9 @@ Npm.depends({
 });
 
 Package.onUse(function(api) {
-  api.versionsFrom('1.0');
+  api.versionsFrom(['1.0', '2.0']);
 
-  api.use(['cfs:base-package@0.0.30', 'cfs:storage-adapter@0.2.1']);
+  api.use(['cfs:base-package', 'cfs:storage-adapter']);
   api.addFiles([
     's3.server.js',
     // 's3.indirect.streaming.js',

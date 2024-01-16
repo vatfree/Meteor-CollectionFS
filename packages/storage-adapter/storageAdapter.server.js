@@ -39,9 +39,7 @@ FS.StorageAdapter = function(storeName, options, api) {
   }
 
   // store reference for easy lookup by storeName
-  if (typeof _storageAdapters[storeName] !== 'undefined') {
-    throw new Error('Storage name already exists: "' + storeName + '"');
-  } else {
+  if (typeof _storageAdapters[storeName] === 'undefined') {
     _storageAdapters[storeName] = self;
   }
 
@@ -83,6 +81,18 @@ FS.StorageAdapter = function(storeName, options, api) {
       return self.adapter.createReadStreamForFileKey(fileObj, options);
     }
     return FS.Utility.safeStream( self._transform.createReadStream(fileObj, options) );
+  };
+
+  // Return direct url for downloading for fileKey
+  self.adapter.getDirectUrlForFileKey = function(fileKey, options) {
+    if (FS.debug) console.log('getDirectUrlForFileKey ' + storeName);
+    return api.getDirectUrl(fileKey, options);
+  };
+
+  // Return direct url for downloading for fileObj
+  self.adapter.getDirectUrl = function(fileObj, options) {
+      if (FS.debug) console.log('getDirectUrl ' + storeName, self.internal);
+      return self.adapter.getDirectUrlForFileKey(self.adapter.fileKey(fileObj), options);
   };
 
   function logEventsForStream(stream) {
@@ -246,7 +256,22 @@ FS.StorageAdapter = function(storeName, options, api) {
     }
   };
 
-  self.remove = function(fileObj, callback) {
+    /**
+     * This is clearly a hack, but SO much faster for copying objects in a bucket
+     */
+    if (api.copy) {
+        self.adapter.copyForFileKey = function(sourceKey, destinationKey, callback) {
+            if (FS.debug) console.log("---SA COPY");
+
+            if (callback) {
+                return api.copy(sourceKey, destinationKey, FS.Utility.safeCallback(callback));
+            } else {
+                throw new Error('Callback is required for copyForFileKey');
+            }
+        };
+    }
+
+    self.remove = function(fileObj, callback) {
     // Add deprecation note
     console.warn('Storage.remove is deprecating, use "Storage.adapter.remove"');
     return self.adapter.remove(fileObj, callback);
