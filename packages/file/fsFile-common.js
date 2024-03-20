@@ -35,7 +35,6 @@ FS.File.prototype = new EventEmitter();
  */
 FS.File.prototype.attachData = function fsFileAttachData(data, options, callback) {
   var self = this;
-
   if (!callback && typeof options === "function") {
     callback = options;
     options = {};

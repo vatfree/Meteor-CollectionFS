@@ -5,7 +5,7 @@
  * @return {undefined}
  * @todo deprecate this
  */
-FS.File.prototype.logCopyFailure = function(storeName, maxTries) {
+FS.File.prototype.logCopyFailure = function (storeName, maxTries) {
   var self = this;
 
   // hasStored will update from the fileRecord
@@ -18,17 +18,23 @@ FS.File.prototype.logCopyFailure = function(storeName, maxTries) {
   FS.TempStore.ensureForFile(self);
 
   var now = new Date();
-  var currentCount = (self.failures && self.failures.copies && self.failures.copies[storeName] && typeof self.failures.copies[storeName].count === "number") ? self.failures.copies[storeName].count : 0;
+  var currentCount =
+    self.failures &&
+    self.failures.copies &&
+    self.failures.copies[storeName] &&
+    typeof self.failures.copies[storeName].count === "number"
+      ? self.failures.copies[storeName].count
+      : 0;
   maxTries = maxTries || 5;
 
   var modifier = {};
   modifier.$set = {};
-  modifier.$set['failures.copies.' + storeName + '.lastAttempt'] = now;
+  modifier.$set["failures.copies." + storeName + ".lastAttempt"] = now;
   if (currentCount === 0) {
-    modifier.$set['failures.copies.' + storeName + '.firstAttempt'] = now;
+    modifier.$set["failures.copies." + storeName + ".firstAttempt"] = now;
   }
-  modifier.$set['failures.copies.' + storeName + '.count'] = currentCount + 1;
-  modifier.$set['failures.copies.' + storeName + '.doneTrying'] = (currentCount + 1 >= maxTries);
+  modifier.$set["failures.copies." + storeName + ".count"] = currentCount + 1;
+  modifier.$set["failures.copies." + storeName + ".doneTrying"] = currentCount + 1 >= maxTries;
   self.update(modifier);
 };
 
@@ -38,12 +44,14 @@ FS.File.prototype.logCopyFailure = function(storeName, maxTries) {
  * @return {boolean} Has this store failed permanently?
  * @todo deprecate this
  */
-FS.File.prototype.failedPermanently = function(storeName) {
+FS.File.prototype.failedPermanently = function (storeName) {
   var self = this;
-  return !!(self.failures &&
-            self.failures.copies &&
-            self.failures.copies[storeName] &&
-            self.failures.copies[storeName].doneTrying);
+  return !!(
+    self.failures &&
+    self.failures.copies &&
+    self.failures.copies[storeName] &&
+    self.failures.copies[storeName].doneTrying
+  );
 };
 
 /**
@@ -59,7 +67,7 @@ FS.File.prototype.failedPermanently = function(storeName) {
  * * If you don't pass a `storeName` and there is no data attached to the FS.File instance, a readable stream for the file data currently in the temporary store (`FS.TempStore`) is returned.
  *
  */
-FS.File.prototype.createReadStream = function(storeName) {
+FS.File.prototype.createReadStream = function (storeName) {
   var self = this;
 
   // If we dont have a store name but got Buffer data?
@@ -75,28 +83,29 @@ FS.File.prototype.createReadStream = function(storeName) {
     // Stream from the store using storage adapter
     if (self.isMounted()) {
       var storage = self.collection.storesLookup[storeName] || self.collection.primaryStore;
-      FS.debug && console.log("fileObj.createReadStream creating read stream for store", storage.name);
+      FS.debug &&
+        console.log("fileObj.createReadStream creating read stream for store", storage.name);
       // return stream
       return storage.adapter.createReadStream(self);
     } else {
-      throw new Meteor.Error('File not mounted');
+      throw new Meteor.Error("File not mounted");
     }
-
   }
 };
 
-FS.File.prototype.getDirectUrl = function(storeName) {
-    var self = this;
+FS.File.prototype.getDirectUrl = function (storeName) {
+  var self = this;
 
-    // Stream from the store using storage adapter
-    if (self.isMounted()) {
-        var storage = self.collection.storesLookup[storeName] || self.collection.primaryStore;
-        FS.debug && console.log("fileObj.createReadStream creating read stream for store", storage.name);
-        // return stream
-        return storage.adapter.getDirectUrl(self);
-    } else {
-        throw new Meteor.Error('File not mounted');
-    }
+  // Stream from the store using storage adapter
+  if (self.isMounted()) {
+    var storage = self.collection.storesLookup[storeName] || self.collection.primaryStore;
+    FS.debug &&
+      console.log("fileObj.createReadStream creating read stream for store", storage.name);
+    // return stream
+    return storage.adapter.getDirectUrl(self);
+  } else {
+    throw new Meteor.Error("File not mounted");
+  }
 };
 
 /**
@@ -111,7 +120,7 @@ FS.File.prototype.getDirectUrl = function(storeName) {
  * * If you don't pass a `storeName`, a writeable stream for writing to the temp store for this file is returned.
  *
  */
-FS.File.prototype.createWriteStream = function(storeName) {
+FS.File.prototype.createWriteStream = function (storeName) {
   var self = this;
 
   // We have to have a mounted file in order for this to work
@@ -128,7 +137,7 @@ FS.File.prototype.createWriteStream = function(storeName) {
       return storage.adapter.createWriteStream(self);
     }
   } else {
-    throw new Meteor.Error('File not mounted');
+    throw new Meteor.Error("File not mounted");
   }
 };
 
@@ -137,7 +146,7 @@ FS.File.prototype.createWriteStream = function(storeName) {
  * @public
  * @returns {FS.File} The new FS.File instance
  */
-FS.File.prototype.copy = function(newMetaData) {
+FS.File.prototype.copy = function (newMetaData) {
   var self = this;
 
   if (!self.isMounted()) {
@@ -145,7 +154,7 @@ FS.File.prototype.copy = function(newMetaData) {
   }
 
   // Get the file record
-  var fileRecord = self.collection.files.findOne({_id: self._id}, {transform: null}) || {};
+  var fileRecord = self.collection.files.findOne({ _id: self._id }, { transform: null }) || {};
 
   // Remove _id and copy keys from the file record
   delete fileRecord._id;
@@ -189,7 +198,7 @@ FS.File.prototype.copy = function(newMetaData) {
   }
   // Update keys in the filerecord
   if (mod) {
-    newFile.update({$set: mod});
+    newFile.update({ $set: mod });
   }
 
   return newFile;
@@ -199,30 +208,37 @@ Meteor.methods({
   // Does a HEAD request to URL to get the type, updatedAt,
   // and size prior to actually downloading the data.
   // That way we can do filter checks without actually downloading.
-  '_cfs_getUrlInfo': function (url, options) {
+  _cfs_getUrlInfo: function (url, options) {
     check(url, String);
     check(options, Object);
 
     this.unblock();
 
-    var response = HTTP.call("HEAD", url, options);
+    var response = HTTP.call("GET", url, {
+      ...options,
+      headers: { ...options.headers, Range: "bytes=0-0" },
+    });
     var headers = response.headers;
     var result = {};
 
-    if (headers['content-type']) {
-      result.type = headers['content-type'];
+    if (headers["content-type"]) {
+      result.type = headers["content-type"];
     }
 
-    if (headers['content-length']) {
-      result.size = +headers['content-length'];
+    if (headers["content-range"]) {
+      result.size = +headers["content-range"].split('/').pop();
+    } else {
+      if (headers["content-length"]) {
+        result.size = +headers["content-length"];
+      }
     }
 
-    if (headers['last-modified']) {
-      result.updatedAt = new Date(headers['last-modified']);
+    if (headers["last-modified"]) {
+      result.updatedAt = new Date(headers["last-modified"]);
     }
 
     return result;
-  }
+  },
 });
 
 // TODO maybe this should be in cfs-storage-adapter
@@ -236,26 +252,26 @@ function _copyStoreData(fileObj, storeName, sourceKey, callback) {
     throw new Error(storeName + " is not a valid store name");
   }
 
-    var destinationKey = storage.adapter.fileKey(fileObj);
-    if (storage.adapter.copyForFileKey) {
-        // We have a native storage adapter copy function, this is much more efficient than doing this ourselves
-        storage.adapter.copyForFileKey(sourceKey, destinationKey, callback);
-    } else {
-        // We want to prevent beforeWrite and transformWrite from running, so
-        // we interact directly with the store.
-        var readStream = storage.adapter.createReadStreamForFileKey(sourceKey);
-        var writeStream = storage.adapter.createWriteStreamForFileKey(destinationKey);
+  var destinationKey = storage.adapter.fileKey(fileObj);
+  if (storage.adapter.copyForFileKey) {
+    // We have a native storage adapter copy function, this is much more efficient than doing this ourselves
+    storage.adapter.copyForFileKey(sourceKey, destinationKey, callback);
+  } else {
+    // We want to prevent beforeWrite and transformWrite from running, so
+    // we interact directly with the store.
+    var readStream = storage.adapter.createReadStreamForFileKey(sourceKey);
+    var writeStream = storage.adapter.createWriteStreamForFileKey(destinationKey);
 
-        writeStream.once('stored', function(result) {
-            callback(null, result.fileKey);
-        });
+    writeStream.once("stored", function (result) {
+      callback(null, result.fileKey);
+    });
 
-        writeStream.once('error', function(error) {
-            callback(error);
-        });
+    writeStream.once("error", function (error) {
+      callback(error);
+    });
 
-        readStream.pipe(writeStream);
-    }
+    readStream.pipe(writeStream);
+  }
 }
 var copyStoreData = Meteor.wrapAsync(_copyStoreData);
 
@@ -266,8 +282,7 @@ var copyStoreData = Meteor.wrapAsync(_copyStoreData);
  * @param {string} targetStoreName
  * @param {boolean=} move
  */
-FS.File.prototype.copyData = function(sourceStoreName, targetStoreName, move){
-
+FS.File.prototype.copyData = function (sourceStoreName, targetStoreName, move) {
   move = !!move;
   /**
    * @type {Object.<string,*>}
@@ -283,7 +298,7 @@ FS.File.prototype.copyData = function(sourceStoreName, targetStoreName, move){
   var targetStoreValues = {};
   for (var v in sourceStoreValues) {
     if (sourceStoreValues.hasOwnProperty(v)) {
-      targetStoreValues[v] = sourceStoreValues[v]
+      targetStoreValues[v] = sourceStoreValues[v];
     }
   }
   targetStoreValues.key = copyKey;
@@ -295,10 +310,10 @@ FS.File.prototype.copyData = function(sourceStoreName, targetStoreName, move){
    */
   var modifier = {};
   modifier.$set = {};
-  modifier.$set["copies."+targetStoreName] = targetStoreValues;
-  if(move){
+  modifier.$set["copies." + targetStoreName] = targetStoreValues;
+  if (move) {
     modifier.$unset = {};
-    modifier.$unset["copies."+sourceStoreName] = "";
+    modifier.$unset["copies." + sourceStoreName] = "";
   }
   this.update(modifier);
 };
@@ -308,7 +323,7 @@ FS.File.prototype.copyData = function(sourceStoreName, targetStoreName, move){
  * @param {string} sourceStoreName
  * @param {string} targetStoreName
  */
-FS.File.prototype.moveData = function(sourceStoreName, targetStoreName){
+FS.File.prototype.moveData = function (sourceStoreName, targetStoreName) {
   this.copyData(sourceStoreName, targetStoreName, true);
 };
 // TODO maybe this should be in cfs-storage-adapter
@@ -348,20 +363,22 @@ function _copyDataFromStoreToStore(fileObj, sourceStoreName, targetStoreName, mo
   var readStream = sourceStorage.adapter.createReadStreamForFileKey(sourceKey);
   var writeStream = targetStorage.adapter.createWriteStreamForFileKey(targetKey);
 
-
-  writeStream.safeOnce('stored', function(result) {
-    if(move && sourceStorage.adapter.remove(fileObj)===false){
-      callback("Copied to store:" + targetStoreName
-      + " with fileKey: "
-      + result.fileKey
-      + ", but could not delete from source store: "
-      + sourceStoreName);
-    }else{
+  writeStream.safeOnce("stored", function (result) {
+    if (move && sourceStorage.adapter.remove(fileObj) === false) {
+      callback(
+        "Copied to store:" +
+          targetStoreName +
+          " with fileKey: " +
+          result.fileKey +
+          ", but could not delete from source store: " +
+          sourceStoreName,
+      );
+    } else {
       callback(null, result.fileKey);
     }
   });
 
-  writeStream.once('error', function(error) {
+  writeStream.once("error", function (error) {
     callback(error);
   });
 
