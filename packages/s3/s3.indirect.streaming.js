@@ -1,7 +1,7 @@
 // We ideally want to pass through the stream to s3
 var PassThrough = Npm.require('stream').PassThrough;
 
-// ... But this is not allways possible since S3 requires the data length set
+// ... But this is not always possible since S3 requires the data length set
 var TransformStream = Npm.require('stream').Transform;
 
 // We create a temp file if needed for the indirect streaming
@@ -43,7 +43,7 @@ IndirectS3Stream = function(options, callback) {
   // Callback - will be served with
   // 1. readStream
   // 2. length of data
-  // 3. callback to repport errors and end the stream
+  // 3. callback to report errors and end the stream
   self.callback = callback;
 
   // Get a temporary filename
