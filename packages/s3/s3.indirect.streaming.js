@@ -40,7 +40,7 @@ IndirectS3Stream = function(options, callback) {
   // read/write streams are ended
   self.allowHalfOpen = true;
 
-  // Callback - will be served with
+
   // 1. readStream
   // 2. length of data
   // 3. callback to report errors and end the stream
