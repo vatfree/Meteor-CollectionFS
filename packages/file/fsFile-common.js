@@ -5,21 +5,21 @@
  * @constructor
  * @param {object|FS.File|data to attach} [ref] Another FS.File instance, a filerecord, or some data to pass to attachData
  */
-FS.File = function(ref, createdByTransform) {
-  var self = this;
+FS.File = function (ref, createdByTransform) {
+	var self = this
 
-  self.createdByTransform = !!createdByTransform;
+	self.createdByTransform = !!createdByTransform
 
-  if (ref instanceof FS.File || isBasicObject(ref)) {
-    // Extend self with filerecord related data
-    FS.Utility.extend(self, FS.Utility.cloneFileRecord(ref, {full: true}));
-  } else if (ref) {
-    self.attachData(ref);
-  }
-};
+	if (ref instanceof FS.File || isBasicObject(ref)) {
+		// Extend self with filerecord related data
+		FS.Utility.extend(self, FS.Utility.cloneFileRecord(ref, { full: true }))
+	} else if (ref) {
+		self.attachData(ref)
+	}
+}
 
 // An FS.File can emit events
-FS.File.prototype = new EventEmitter();
+FS.File.prototype = new EventEmitter()
 
 /**
  * @method FS.File.prototype.attachData
@@ -34,141 +34,148 @@ FS.File.prototype = new EventEmitter();
  *
  */
 FS.File.prototype.attachData = function fsFileAttachData(data, options, callback) {
-  var self = this;
+	var self = this
+	if (!callback && typeof options === "function") {
+		callback = options
+		options = {}
+	}
+	options = options || {}
 
-  if (!callback && typeof options === "function") {
-    callback = options;
-    options = {};
-  }
-  options = options || {};
+	if (!data) {
+		throw new Error("FS.File.attachData requires a data argument with some data")
+	}
 
-  if (!data) {
-    throw new Error('FS.File.attachData requires a data argument with some data');
-  }
+	var urlOpts
 
-  var urlOpts;
+	// Set any other properties we can determine from the source data
+	// File
+	if (typeof File !== "undefined" && data instanceof File) {
+		self.name(data.name)
+		self.updatedAt(data.lastModifiedDate)
+		self.size(data.size)
+		setData(data.type)
+	}
+	// Blob
+	else if (typeof Blob !== "undefined" && data instanceof Blob) {
+		self.updatedAt(new Date())
+		self.size(data.size)
+		setData(data.type)
+	}
+	// URL: we need to do a HEAD request to get the type because type
+	// is required for filtering to work.
+	// TODO: see if we have a uService configured and use it instead
+	else if (
+		typeof data === "string" &&
+		(data.slice(0, 5) === "http:" || data.slice(0, 6) === "https:")
+	) {
+		urlOpts = FS.Utility.extend({}, options)
+		if (urlOpts.type) {
+			delete urlOpts.type
+		}
 
-  // Set any other properties we can determine from the source data
-  // File
-  if (typeof File !== "undefined" && data instanceof File) {
-    self.name(data.name);
-    self.updatedAt(data.lastModifiedDate);
-    self.size(data.size);
-    setData(data.type);
-  }
-  // Blob
-  else if (typeof Blob !== "undefined" && data instanceof Blob) {
-    self.updatedAt(new Date());
-    self.size(data.size);
-    setData(data.type);
-  }
-  // URL: we need to do a HEAD request to get the type because type
-  // is required for filtering to work.
-  else if (typeof data === "string" && (data.slice(0, 5) === "http:" || data.slice(0, 6) === "https:")) {
-    urlOpts = FS.Utility.extend({}, options);
-    if (urlOpts.type) {
-      delete urlOpts.type;
-    }
+		if (!callback) {
+			if (Meteor.isClient) {
+				throw new Error(
+					"FS.File.attachData requires a callback when attaching a URL on the client"
+				)
+			}
+			var result = Meteor.call("_cfs_getUrlInfo", data, urlOpts)
+			FS.Utility.extend(self, { original: result })
+			setData(result.type)
+		} else {
+			Meteor.call("_cfs_getUrlInfo", data, urlOpts, function (error, result) {
+				FS.debug && console.log("URL HEAD RESULT:", result)
+				if (error) {
+					callback(error)
+				} else {
+					var type = result.type || options.type
+					if (!type) {
+						throw new Error(
+							"FS.File.attachData got a URL for which it could not determine the MIME type and none was provided using options.type"
+						)
+					}
+					FS.Utility.extend(self, { original: result })
+					setData(type)
+				}
+			})
+		}
+	}
+	// Everything else
+	else {
+		setData(options.type)
+	}
 
-    if (!callback) {
-      if (Meteor.isClient) {
-        throw new Error('FS.File.attachData requires a callback when attaching a URL on the client');
-      }
-      var result = Meteor.call('_cfs_getUrlInfo', data, urlOpts);
-      FS.Utility.extend(self, {original: result});
-      setData(result.type);
-    } else {
-      Meteor.call('_cfs_getUrlInfo', data, urlOpts, function (error, result) {
-        FS.debug && console.log("URL HEAD RESULT:", result);
-        if (error) {
-          callback(error);
-        } else {
-          var type = result.type || options.type;
-          if (! type) {
-            throw new Error('FS.File.attachData got a URL for which it could not determine the MIME type and none was provided using options.type');
-          }
-          FS.Utility.extend(self, {original: result});
-          setData(type);
-        }
-      });
-    }
-  }
-  // Everything else
-  else {
-    setData(options.type);
-  }
+	// Set the data
+	function setData(type) {
+		self.data = new DataMan(data, type, urlOpts)
 
-  // Set the data
-  function setData(type) {
-    self.data = new DataMan(data, type, urlOpts);
+		// Update the type to match what the data is
+		self.type(self.data.type())
 
-    // Update the type to match what the data is
-    self.type(self.data.type());
+		// Update the size to match what the data is.
+		// It's always safe to call self.data.size() without supplying a callback
+		// because it requires a callback only for URLs on the client, and we
+		// already added size for URLs when we got the result from '_cfs_getUrlInfo' method.
+		if (!self.size()) {
+			if (callback) {
+				self.data.size(function (error, size) {
+					if (error) {
+						callback && callback(error)
+					} else {
+						self.size(size)
+						setName()
+					}
+				})
+			} else {
+				self.size(self.data.size())
+				setName()
+			}
+		} else {
+			setName()
+		}
+	}
 
-    // Update the size to match what the data is.
-    // It's always safe to call self.data.size() without supplying a callback
-    // because it requires a callback only for URLs on the client, and we
-    // already added size for URLs when we got the result from '_cfs_getUrlInfo' method.
-    if (!self.size()) {
-      if (callback) {
-        self.data.size(function (error, size) {
-          if (error) {
-            callback && callback(error);
-          } else {
-            self.size(size);
-            setName();
-          }
-        });
-      } else {
-        self.size(self.data.size());
-        setName();
-      }
-    } else {
-      setName();
-    }
-  }
+	function setName() {
+		// See if we can extract a file name from URL or filepath
+		if (!self.name() && typeof data === "string") {
+			// name from URL
+			if (data.slice(0, 5) === "http:" || data.slice(0, 6) === "https:") {
+				if (FS.Utility.getFileExtension(data).length) {
+					// for a URL we assume the end is a filename only if it has an extension
+					self.name(FS.Utility.getFileName(data))
+				}
+			}
+			// name from filepath
+			else if (data.slice(0, 5) !== "data:") {
+				self.name(FS.Utility.getFileName(data))
+			}
+		}
 
-  function setName() {
-    // See if we can extract a file name from URL or filepath
-    if (!self.name() && typeof data === "string") {
-      // name from URL
-      if (data.slice(0, 5) === "http:" || data.slice(0, 6) === "https:") {
-        if (FS.Utility.getFileExtension(data).length) {
-          // for a URL we assume the end is a filename only if it has an extension
-          self.name(FS.Utility.getFileName(data));
-        }
-      }
-      // name from filepath
-      else if (data.slice(0, 5) !== "data:") {
-        self.name(FS.Utility.getFileName(data));
-      }
-    }
+		callback && callback()
+	}
 
-    callback && callback();
-  }
-
-  return self; //allow chaining
-};
+	return self //allow chaining
+}
 
 /**
  * @method FS.File.prototype.uploadProgress
  * @public
  * @returns {number} The server confirmed upload progress
  */
-FS.File.prototype.uploadProgress = function() {
-  var self = this;
-  // Make sure our file record is updated
-  self.getFileRecord();
+FS.File.prototype.uploadProgress = function () {
+	var self = this
+	// Make sure our file record is updated
+	self.getFileRecord()
 
-  // If fully uploaded, return 100
-  if (self.uploadedAt) {
-    return 100;
-  }
-  // Otherwise return the confirmed progress or 0
-  else {
-    return Math.round((self.chunkCount || 0) / (self.chunkSum || 1) * 100);
-  }
-};
+	// If fully uploaded, return 100
+	if (self.uploadedAt) {
+		return 100
+	}
+	// Otherwise return the confirmed progress or 0
+	else {
+		return Math.round(((self.chunkCount || 0) / (self.chunkSum || 1)) * 100)
+	}
+}
 
 /**
  * @method FS.File.prototype.controlledByDeps
@@ -180,72 +187,72 @@ FS.File.prototype.uploadProgress = function() {
  * > mean that our fileRecord is fully updated by Meteor and we are mounted on
  * > a collection
  */
-FS.File.prototype.controlledByDeps = function() {
-  var self = this;
-  return self.createdByTransform && Deps.active;
-};
+FS.File.prototype.controlledByDeps = function () {
+	var self = this
+	return self.createdByTransform && Deps.active
+}
 
 /**
  * @method FS.File.prototype.getCollection
  * @public
  * @returns {FS.Collection} Returns attached collection or undefined if not mounted
  */
-FS.File.prototype.getCollection = function() {
-  // Get the collection reference
-  var self = this;
+FS.File.prototype.getCollection = function () {
+	// Get the collection reference
+	var self = this
 
-  // If we already made the link then do no more
-  if (self.collection) {
-    return self.collection;
-  }
+	// If we already made the link then do no more
+	if (self.collection) {
+		return self.collection
+	}
 
-  // If we don't have a collectionName then there's not much to do, the file is
-  // not mounted yet
-  if (!self.collectionName) {
-    // Should not throw an error here - could be common that the file is not
-    // yet mounted into a collection
-    return;
-  }
+	// If we don't have a collectionName then there's not much to do, the file is
+	// not mounted yet
+	if (!self.collectionName) {
+		// Should not throw an error here - could be common that the file is not
+		// yet mounted into a collection
+		return
+	}
 
-  // Link the collection to the file
-  self.collection = FS._collections[self.collectionName];
+	// Link the collection to the file
+	self.collection = FS._collections[self.collectionName]
 
-  return self.collection; //possibly undefined, but that's desired behavior
-};
+	return self.collection //possibly undefined, but that's desired behavior
+}
 
 /**
  * @method FS.File.prototype.isMounted
  * @public
  * @returns {FS.Collection} Returns attached collection or undefined if not mounted
  */
-FS.File.prototype.isMounted = FS.File.prototype.getCollection;
+FS.File.prototype.isMounted = FS.File.prototype.getCollection
 
 /**
  * @method FS.File.prototype.getFileRecord Returns the fileRecord
  * @public
  * @returns {object} The filerecord
  */
-FS.File.prototype.getFileRecord = function() {
-  var self = this;
-  // Check if this file object fileRecord is kept updated by Meteor, if so
-  // return self
-  if (self.controlledByDeps()) {
-    return self;
-  }
-  // Go for manually updating the file record
-  if (self.isMounted()) {
-    FS.debug && console.log('GET FILERECORD: ' + self._id);
+FS.File.prototype.getFileRecord = function () {
+	var self = this
+	// Check if this file object fileRecord is kept updated by Meteor, if so
+	// return self
+	if (self.controlledByDeps()) {
+		return self
+	}
+	// Go for manually updating the file record
+	if (self.isMounted()) {
+		FS.debug && console.log("GET FILERECORD: " + self._id)
 
-    // Return the fileRecord or an empty object
-    var fileRecord = self.collection.files.findOne({_id: self._id}) || {};
-    FS.Utility.extend(self, fileRecord);
-    return fileRecord;
-  } else {
-    // We return an empty object, this way users can still do `getRecord().size`
-    // Without getting an error
-    return {};
-  }
-};
+		// Return the fileRecord or an empty object
+		var fileRecord = self.collection.files.findOne({ _id: self._id }) || {}
+		FS.Utility.extend(self, fileRecord)
+		return fileRecord
+	} else {
+		// We return an empty object, this way users can still do `getRecord().size`
+		// Without getting an error
+		return {}
+	}
+}
 
 /**
  * @method FS.File.prototype.update
@@ -256,33 +263,32 @@ FS.File.prototype.getFileRecord = function() {
  *
  * Updates the fileRecord.
  */
-FS.File.prototype.update = function(modifier, options, callback) {
-  var self = this;
+FS.File.prototype.update = function (modifier, options, callback) {
+	var self = this
 
-  FS.debug && console.log('UPDATE: ' + JSON.stringify(modifier));
+	FS.debug && console.log("UPDATE: " + JSON.stringify(modifier))
 
-  // Make sure we have options and callback
-  if (!callback && typeof options === 'function') {
-    callback = options;
-    options = {};
-  }
-  callback = callback || FS.Utility.defaultCallback;
+	// Make sure we have options and callback
+	if (!callback && typeof options === "function") {
+		callback = options
+		options = {}
+	}
+	callback = callback || FS.Utility.defaultCallback
 
-  if (!self.isMounted()) {
-    callback(new Error("Cannot update a file that is not associated with a collection"));
-    return;
-  }
+	if (!self.isMounted()) {
+		callback(new Error("Cannot update a file that is not associated with a collection"))
+		return
+	}
 
-  // Call collection update - File record
-  return self.collection.files.update(self._id, modifier, options, function(err, count) {
-    // Update the fileRecord if it was changed and on the client
-    // The server-side methods will pull the fileRecord if needed
-    if (count > 0 && Meteor.isClient)
-      self.getFileRecord();
-    // Call callback
-    callback(err, count);
-  });
-};
+	// Call collection update - File record
+	return self.collection.files.update(self._id, modifier, options, function (err, count) {
+		// Update the fileRecord if it was changed and on the client
+		// The server-side methods will pull the fileRecord if needed
+		if (count > 0 && Meteor.isClient) self.getFileRecord()
+		// Call callback
+		callback(err, count)
+	})
+}
 
 /**
  * @method FS.File.prototype._saveChanges
@@ -291,30 +297,30 @@ FS.File.prototype.update = function(modifier, options, callback) {
  *
  * Updates the fileRecord from values currently set on the FS.File instance.
  */
-FS.File.prototype._saveChanges = function(what) {
-  var self = this;
+FS.File.prototype._saveChanges = function (what) {
+	var self = this
 
-  if (!self.isMounted()) {
-    return;
-  }
+	if (!self.isMounted()) {
+		return
+	}
 
-  FS.debug && console.log("FS.File._saveChanges:", what || "all");
+	FS.debug && console.log("FS.File._saveChanges:", what || "all")
 
-  var mod = {$set: {}};
-  if (what === "_original") {
-    mod.$set.original = self.original;
-  } else if (typeof what === "string") {
-    var info = self.copies[what];
-    if (info) {
-      mod.$set["copies." + what] = info;
-    }
-  } else {
-    mod.$set.original = self.original;
-    mod.$set.copies = self.copies;
-  }
+	var mod = { $set: {} }
+	if (what === "_original") {
+		mod.$set.original = self.original
+	} else if (typeof what === "string") {
+		var info = self.copies[what]
+		if (info) {
+			mod.$set["copies." + what] = info
+		}
+	} else {
+		mod.$set.original = self.original
+		mod.$set.copies = self.copies
+	}
 
-  self.update(mod);
-};
+	self.update(mod)
+}
 
 /**
  * @method FS.File.prototype.remove
@@ -324,27 +330,27 @@ FS.File.prototype._saveChanges = function(what) {
  *
  * Remove the current file from its FS.Collection
  */
-FS.File.prototype.remove = function(callback) {
-  var self = this;
+FS.File.prototype.remove = function (callback) {
+	var self = this
 
-  FS.debug && console.log('REMOVE: ' + self._id);
+	FS.debug && console.log("REMOVE: " + self._id)
 
-  callback = callback || FS.Utility.defaultCallback;
+	callback = callback || FS.Utility.defaultCallback
 
-  if (!self.isMounted()) {
-    callback(new Error("Cannot remove a file that is not associated with a collection"));
-    return;
-  }
+	if (!self.isMounted()) {
+		callback(new Error("Cannot remove a file that is not associated with a collection"))
+		return
+	}
 
-  return self.collection.files.remove({_id: self._id}, function(err, res) {
-    if (!err) {
-      delete self._id;
-      delete self.collection;
-      delete self.collectionName;
-    }
-    callback(err, res);
-  });
-};
+	return self.collection.files.remove({ _id: self._id }, function (err, res) {
+		if (!err) {
+			delete self._id
+			delete self.collection
+			delete self.collectionName
+		}
+		callback(err, res)
+	})
+}
 
 /**
  * @method FS.File.prototype.moveTo
@@ -365,22 +371,22 @@ FS.File.prototype.remove = function(callback) {
  * @param {String} [options.store] - Store name. Default is the original extension.
  * @returns {string} The extension eg.: `jpg` or if not found then an empty string ''
  */
-FS.File.prototype.getExtension = function(options) {
-  var self = this;
-  return self.extension(options);
-};
+FS.File.prototype.getExtension = function (options) {
+	var self = this
+	return self.extension(options)
+}
 
 function checkContentType(fsFile, storeName, startOfType) {
-  var type;
-  if (storeName && fsFile.hasStored(storeName)) {
-    type = fsFile.type({store: storeName});
-  } else {
-    type = fsFile.type();
-  }
-  if (typeof type === "string") {
-    return type.indexOf(startOfType) === 0;
-  }
-  return false;
+	var type
+	if (storeName && fsFile.hasStored(storeName)) {
+		type = fsFile.type({ store: storeName })
+	} else {
+		type = fsFile.type()
+	}
+	if (typeof type === "string") {
+		return type.indexOf(startOfType) === 0
+	}
+	return false
 }
 
 /**
@@ -394,9 +400,9 @@ function checkContentType(fsFile, storeName, startOfType) {
  * the specified store, or if you don't specify a store, this method checks
  * the content type of the original file.
  */
-FS.File.prototype.isImage = function(options) {
-  return checkContentType(this, (options || {}).store, 'image/');
-};
+FS.File.prototype.isImage = function (options) {
+	return checkContentType(this, (options || {}).store, "image/")
+}
 
 /**
  * @method FS.File.prototype.isPDF Is it a pdf file?
@@ -409,9 +415,9 @@ FS.File.prototype.isImage = function(options) {
  * the specified store, or if you don't specify a store, this method checks
  * the content type of the original file.
  */
-FS.File.prototype.isPDF = function(options) {
-  return checkContentType(this, (options || {}).store, 'application/pdf');
-};
+FS.File.prototype.isPDF = function (options) {
+	return checkContentType(this, (options || {}).store, "application/pdf")
+}
 
 /**
  * @method FS.File.prototype.isVideo Is it a video file?
@@ -424,9 +430,9 @@ FS.File.prototype.isPDF = function(options) {
  * the specified store, or if you don't specify a store, this method checks
  * the content type of the original file.
  */
-FS.File.prototype.isVideo = function(options) {
-  return checkContentType(this, (options || {}).store, 'video/');
-};
+FS.File.prototype.isVideo = function (options) {
+	return checkContentType(this, (options || {}).store, "video/")
+}
 
 /**
  * @method FS.File.prototype.isAudio Is it an audio file?
@@ -439,9 +445,9 @@ FS.File.prototype.isVideo = function(options) {
  * the specified store, or if you don't specify a store, this method checks
  * the content type of the original file.
  */
-FS.File.prototype.isAudio = function(options) {
-  return checkContentType(this, (options || {}).store, 'audio/');
-};
+FS.File.prototype.isAudio = function (options) {
+	return checkContentType(this, (options || {}).store, "audio/")
+}
 
 /**
  * @method FS.File.prototype.formattedSize
@@ -455,31 +461,31 @@ FS.File.prototype.isAudio = function(options) {
  * * If info is not found or a size can't be determined, it will show 0.
  */
 FS.File.prototype.formattedSize = function fsFileFormattedSize(options) {
-  var self = this;
+	var self = this
 
-  if (typeof numeral !== "function")
-    throw new Error("You must add the numeral package if you call FS.File.formattedSize");
+	if (typeof numeral !== "function")
+		throw new Error("You must add the numeral package if you call FS.File.formattedSize")
 
-  options = options || {};
-  options = options.hash || options;
+	options = options || {}
+	options = options.hash || options
 
-  var size = self.size(options) || 0;
-  return numeral(size).format(options.formatString || '0.00 b');
-};
+	var size = self.size(options) || 0
+	return numeral(size).format(options.formatString || "0.00 b")
+}
 
 /**
  * @method FS.File.prototype.isUploaded Is this file completely uploaded?
  * @public
  * @returns {boolean} True if the number of uploaded bytes is equal to the file size.
  */
-FS.File.prototype.isUploaded = function() {
-  var self = this;
+FS.File.prototype.isUploaded = function () {
+	var self = this
 
-  // Make sure we use the updated file record
-  self.getFileRecord();
+	// Make sure we use the updated file record
+	self.getFileRecord()
 
-  return !!self.uploadedAt;
-};
+	return !!self.uploadedAt
+}
 
 /**
  * @method FS.File.prototype.hasStored
@@ -494,24 +500,24 @@ FS.File.prototype.isUploaded = function() {
  * could exist. This is the case in `FS.File.url` we are optimistic that the
  * copy supplied by the user exists.
  */
-FS.File.prototype.hasStored = function(storeName, optimistic) {
-  var self = this;
-  // Make sure we use the updated file record
-  self.getFileRecord();
-  // If we havent the published data then
-  if (FS.Utility.isEmpty(self.copies)) {
-    return !!optimistic;
-  }
-  if (typeof storeName === "string") {
-    // Return true only if the `key` property is present, which is not set until
-    // storage is complete.
-    return !!(self.copies && self.copies[storeName] && self.copies[storeName].key);
-  }
-  return false;
-};
+FS.File.prototype.hasStored = function (storeName, optimistic) {
+	var self = this
+	// Make sure we use the updated file record
+	self.getFileRecord()
+	// If we havent the published data then
+	if (FS.Utility.isEmpty(self.copies)) {
+		return !!optimistic
+	}
+	if (typeof storeName === "string") {
+		// Return true only if the `key` property is present, which is not set until
+		// storage is complete.
+		return !!(self.copies && self.copies[storeName] && self.copies[storeName].key)
+	}
+	return false
+}
 
 // Backwards compatibility
-FS.File.prototype.hasCopy = FS.File.prototype.hasStored;
+FS.File.prototype.hasCopy = FS.File.prototype.hasStored
 
 /**
  * @method FS.File.prototype.getCopyInfo
@@ -520,12 +526,12 @@ FS.File.prototype.hasCopy = FS.File.prototype.hasStored;
  * @param {string} storeName Name of the store for which to get copy info.
  * @returns {Object} The file details, e.g., name, size, key, etc., specific to the copy saved in this store.
  */
-FS.File.prototype.getCopyInfo = function(storeName) {
-  var self = this;
-  // Make sure we use the updated file record
-  self.getFileRecord();
-  return (self.copies && self.copies[storeName]) || null;
-};
+FS.File.prototype.getCopyInfo = function (storeName) {
+	var self = this
+	// Make sure we use the updated file record
+	self.getFileRecord()
+	return (self.copies && self.copies[storeName]) || null
+}
 
 /**
  * @method FS.File.prototype._getInfo
@@ -535,21 +541,21 @@ FS.File.prototype.getCopyInfo = function(storeName) {
  * @param {Boolean} [options.updateFileRecordFirst=false] Update this instance with data from the DB first?
  * @returns {Object} The file details, e.g., name, size, key, etc. If not found, returns an empty object.
  */
-FS.File.prototype._getInfo = function(storeName, options) {
-  var self = this;
-  options = options || {};
+FS.File.prototype._getInfo = function (storeName, options) {
+	var self = this
+	options = options || {}
 
-  if (options.updateFileRecordFirst) {
-    // Make sure we use the updated file record
-    self.getFileRecord();
-  }
+	if (options.updateFileRecordFirst) {
+		// Make sure we use the updated file record
+		self.getFileRecord()
+	}
 
-  if (storeName) {
-    return (self.copies && self.copies[storeName]) || {};
-  } else {
-    return self.original || {};
-  }
-};
+	if (storeName) {
+		return (self.copies && self.copies[storeName]) || {}
+	} else {
+		return self.original || {}
+	}
+}
 
 /**
  * @method FS.File.prototype._setInfo
@@ -560,19 +566,19 @@ FS.File.prototype._getInfo = function(storeName, options) {
  * @param {Boolean} save - Should the new value be saved to the DB, too, or just set in the FS.File properties?
  * @returns {undefined}
  */
-FS.File.prototype._setInfo = function(storeName, property, value, save) {
-  var self = this;
-  if (typeof storeName === "string") {
-    self.copies = self.copies || {};
-    self.copies[storeName] = self.copies[storeName] || {};
-    self.copies[storeName][property] = value;
-    save && self._saveChanges(storeName);
-  } else {
-    self.original = self.original || {};
-    self.original[property] = value;
-    save && self._saveChanges("_original");
-  }
-};
+FS.File.prototype._setInfo = function (storeName, property, value, save) {
+	var self = this
+	if (typeof storeName === "string") {
+		self.copies = self.copies || {}
+		self.copies[storeName] = self.copies[storeName] || {}
+		self.copies[storeName][property] = value
+		save && self._saveChanges(storeName)
+	} else {
+		self.original = self.original || {}
+		self.original[property] = value
+		save && self._saveChanges("_original")
+	}
+}
 
 /**
  * @method FS.File.prototype.name
@@ -584,20 +590,28 @@ FS.File.prototype._setInfo = function(storeName, property, value, save) {
  * @param {Boolean} [options.save=true] Save change to database? Applies to setter usage only.
  * @returns {String|undefined} If setting, returns `undefined`. If getting, returns the file name.
  */
-FS.File.prototype.name = function(value, options) {
-  var self = this;
+FS.File.prototype.name = function (value, options) {
+	var self = this
 
-  if (!options && ((typeof value === "object" && value !== null) || typeof value === "undefined")) {
-    // GET
-    options = value || {};
-    options = options.hash || options; // allow use as UI helper
-    return self._getInfo(options.store, options).name;
-  } else {
-    // SET
-    options = options || {};
-    return self._setInfo(options.store, 'name', value, typeof options.save === "boolean" ? options.save : true);
-  }
-};
+	if (
+		!options &&
+		((typeof value === "object" && value !== null) || typeof value === "undefined")
+	) {
+		// GET
+		options = value || {}
+		options = options.hash || options // allow use as UI helper
+		return self._getInfo(options.store, options).name
+	} else {
+		// SET
+		options = options || {}
+		return self._setInfo(
+			options.store,
+			"name",
+			value,
+			typeof options.save === "boolean" ? options.save : true
+		)
+	}
+}
 
 /**
  * @method FS.File.prototype.extension
@@ -609,20 +623,28 @@ FS.File.prototype.name = function(value, options) {
  * @param {Boolean} [options.save=true] Save change to database? Applies to setter usage only.
  * @returns {String|undefined} If setting, returns `undefined`. If getting, returns the file extension or an empty string if there isn't one.
  */
-FS.File.prototype.extension = function(value, options) {
-  var self = this;
+FS.File.prototype.extension = function (value, options) {
+	var self = this
 
-  if (!options && ((typeof value === "object" && value !== null) || typeof value === "undefined")) {
-    // GET
-    options = value || {};
-    return FS.Utility.getFileExtension(self.name(options) || '');
-  } else {
-    // SET
-    options = options || {};
-    var newName = FS.Utility.setFileExtension(self.name(options) || '', value);
-    return self._setInfo(options.store, 'name', newName, typeof options.save === "boolean" ? options.save : true);
-  }
-};
+	if (
+		!options &&
+		((typeof value === "object" && value !== null) || typeof value === "undefined")
+	) {
+		// GET
+		options = value || {}
+		return FS.Utility.getFileExtension(self.name(options) || "")
+	} else {
+		// SET
+		options = options || {}
+		var newName = FS.Utility.setFileExtension(self.name(options) || "", value)
+		return self._setInfo(
+			options.store,
+			"name",
+			newName,
+			typeof options.save === "boolean" ? options.save : true
+		)
+	}
+}
 
 /**
  * @method FS.File.prototype.size
@@ -634,20 +656,28 @@ FS.File.prototype.extension = function(value, options) {
  * @param {Boolean} [options.save=true] Save change to database? Applies to setter usage only.
  * @returns {Number|undefined} If setting, returns `undefined`. If getting, returns the file size.
  */
-FS.File.prototype.size = function(value, options) {
-  var self = this;
+FS.File.prototype.size = function (value, options) {
+	var self = this
 
-  if (!options && ((typeof value === "object" && value !== null) || typeof value === "undefined")) {
-    // GET
-    options = value || {};
-    options = options.hash || options; // allow use as UI helper
-    return self._getInfo(options.store, options).size;
-  } else {
-    // SET
-    options = options || {};
-    return self._setInfo(options.store, 'size', value, typeof options.save === "boolean" ? options.save : true);
-  }
-};
+	if (
+		!options &&
+		((typeof value === "object" && value !== null) || typeof value === "undefined")
+	) {
+		// GET
+		options = value || {}
+		options = options.hash || options // allow use as UI helper
+		return self._getInfo(options.store, options).size
+	} else {
+		// SET
+		options = options || {}
+		return self._setInfo(
+			options.store,
+			"size",
+			value,
+			typeof options.save === "boolean" ? options.save : true
+		)
+	}
+}
 
 /**
  * @method FS.File.prototype.type
@@ -659,20 +689,28 @@ FS.File.prototype.size = function(value, options) {
  * @param {Boolean} [options.save=true] Save change to database? Applies to setter usage only.
  * @returns {String|undefined} If setting, returns `undefined`. If getting, returns the file type.
  */
-FS.File.prototype.type = function(value, options) {
-  var self = this;
+FS.File.prototype.type = function (value, options) {
+	var self = this
 
-  if (!options && ((typeof value === "object" && value !== null) || typeof value === "undefined")) {
-    // GET
-    options = value || {};
-    options = options.hash || options; // allow use as UI helper
-    return self._getInfo(options.store, options).type;
-  } else {
-    // SET
-    options = options || {};
-    return self._setInfo(options.store, 'type', value, typeof options.save === "boolean" ? options.save : true);
-  }
-};
+	if (
+		!options &&
+		((typeof value === "object" && value !== null) || typeof value === "undefined")
+	) {
+		// GET
+		options = value || {}
+		options = options.hash || options // allow use as UI helper
+		return self._getInfo(options.store, options).type
+	} else {
+		// SET
+		options = options || {}
+		return self._setInfo(
+			options.store,
+			"type",
+			value,
+			typeof options.save === "boolean" ? options.save : true
+		)
+	}
+}
 
 /**
  * @method FS.File.prototype.updatedAt
@@ -684,35 +722,44 @@ FS.File.prototype.type = function(value, options) {
  * @param {Boolean} [options.save=true] Save change to database? Applies to setter usage only.
  * @returns {String|undefined} If setting, returns `undefined`. If getting, returns the file's last updated date.
  */
-FS.File.prototype.updatedAt = function(value, options) {
-  var self = this;
+FS.File.prototype.updatedAt = function (value, options) {
+	var self = this
 
-  if (!options && ((typeof value === "object" && value !== null && !(value instanceof Date)) || typeof value === "undefined")) {
-    // GET
-    options = value || {};
-    options = options.hash || options; // allow use as UI helper
-    return self._getInfo(options.store, options).updatedAt;
-  } else {
-    // SET
-    options = options || {};
-    return self._setInfo(options.store, 'updatedAt', value, typeof options.save === "boolean" ? options.save : true);
-  }
-};
+	if (
+		!options &&
+		((typeof value === "object" && value !== null && !(value instanceof Date)) ||
+			typeof value === "undefined")
+	) {
+		// GET
+		options = value || {}
+		options = options.hash || options // allow use as UI helper
+		return self._getInfo(options.store, options).updatedAt
+	} else {
+		// SET
+		options = options || {}
+		return self._setInfo(
+			options.store,
+			"updatedAt",
+			value,
+			typeof options.save === "boolean" ? options.save : true
+		)
+	}
+}
 
 function isBasicObject(obj) {
-  return (obj === Object(obj) && Object.getPrototypeOf(obj) === Object.prototype);
+	return obj === Object(obj) && Object.getPrototypeOf(obj) === Object.prototype
 }
 
 // getPrototypeOf polyfill
 if (typeof Object.getPrototypeOf !== "function") {
-  if (typeof "".__proto__ === "object") {
-    Object.getPrototypeOf = function(object) {
-      return object.__proto__;
-    };
-  } else {
-    Object.getPrototypeOf = function(object) {
-      // May break if the constructor has been tampered with
-      return object.constructor.prototype;
-    };
-  }
+	if (typeof "".__proto__ === "object") {
+		Object.getPrototypeOf = function (object) {
+			return object.__proto__
+		}
+	} else {
+		Object.getPrototypeOf = function (object) {
+			// May break if the constructor has been tampered with
+			return object.constructor.prototype
+		}
+	}
 }
