@@ -1,3 +1,6 @@
+const debug = (...args) =>
+  Meteor.settings.debug?.fileUploadStream ? console.debug("Upsert Traveller", ...args) : null;
+
 /**
  * @method FS.File
  * @namespace FS.File
@@ -45,6 +48,8 @@ FS.File.prototype.attachData = function fsFileAttachData(data, options, callback
     throw new Error("FS.File.attachData requires a data argument with some data");
   }
 
+  debug("Options", options);
+
   var urlOpts;
 
   // Set any other properties we can determine from the source data
@@ -81,6 +86,10 @@ FS.File.prototype.attachData = function fsFileAttachData(data, options, callback
       }
       var result = Meteor.call("_cfs_getUrlInfo", data, urlOpts);
       FS.Utility.extend(self, { original: result });
+      debug(
+        "Set data",
+        result.type === "application/octet-stream" ? options.type ?? result.type : result.type,
+      );
       setData(
         result.type === "application/octet-stream" ? options.type ?? result.type : result.type,
       );
@@ -98,6 +107,7 @@ FS.File.prototype.attachData = function fsFileAttachData(data, options, callback
           }
           FS.Utility.extend(self, { original: result });
           setData(type === "application/octet-stream" ? options.type ?? type : type);
+          FS.debug && console.log("FS", "Type", self.type);
         }
       });
     }
@@ -111,8 +121,14 @@ FS.File.prototype.attachData = function fsFileAttachData(data, options, callback
   function setData(type) {
     self.data = new DataMan(data, type, urlOpts);
 
+    debug(
+      "Setting type",
+      self.data.type() === "application/octet-stream" ? type ?? self.data.type() : self.data.type(),
+    );
     // Update the type to match what the data is
-    self.type(self.data.type());
+    self.type(
+      self.data.type() === "application/octet-stream" ? type ?? self.data.type() : self.data.type(),
+    );
 
     // Update the size to match what the data is.
     // It's always safe to call self.data.size() without supplying a callback

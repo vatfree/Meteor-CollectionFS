@@ -23,18 +23,23 @@ DataMan = function DataMan(data, type) {
   } else if (typeof Blob !== "undefined" && data instanceof Blob) {
     self.blob = data;
     self._type = data.type;
-  } else if (typeof ArrayBuffer !== "undefined" && data instanceof ArrayBuffer || EJSON.isBinary(data)) {
+  } else if (
+    (typeof ArrayBuffer !== "undefined" && data instanceof ArrayBuffer) ||
+    EJSON.isBinary(data)
+  ) {
     if (typeof Blob === "undefined") {
       throw new Error("Browser must support Blobs to handle an ArrayBuffer or Uint8Array");
     }
     if (!type) {
-      throw new Error("DataMan constructor requires a type argument when passed an ArrayBuffer or Uint8Array");
+      throw new Error(
+        "DataMan constructor requires a type argument when passed an ArrayBuffer or Uint8Array",
+      );
     }
-    self.blob = new Blob([data], {type: type});
+    self.blob = new Blob([data], { type: type });
     self._type = type;
   } else if (typeof data === "string") {
     if (data.slice(0, 5) === "data:") {
-      self._type = data.slice(5, data.indexOf(';'));
+      self._type = type || data.slice(5, data.indexOf(";"));
       self.blob = dataURItoBlob(data, self._type);
     } else if (data.slice(0, 5) === "http:" || data.slice(0, 6) === "https:") {
       if (!type) {
@@ -68,20 +73,19 @@ DataMan.prototype.getBlob = function dataManGetBlob(callback) {
       callback(null, self.blob);
     } else if (self.url) {
       var xhr = new XMLHttpRequest();
-      xhr.open('GET', self.url, true);
+      xhr.open("GET", self.url, true);
       xhr.responseType = "blob";
-      xhr.onload = function(data) {
+      xhr.onload = function (data) {
         self.blob = xhr.response;
         callback(null, self.blob);
       };
-      xhr.onerror = function(err) {
+      xhr.onerror = function (err) {
         callback(err);
       };
       xhr.send();
     }
   } else {
-    if (self.url)
-      throw new Error('DataMan.getBlob requires a callback when managing a URL');
+    if (self.url) throw new Error("DataMan.getBlob requires a callback when managing a URL");
     return self.blob;
   }
 };
@@ -111,10 +115,10 @@ DataMan.prototype.getBinary = function dataManGetBinary(start, end, callback) {
     }
 
     var reader = new FileReader();
-    reader.onload = function(evt) {
+    reader.onload = function (evt) {
       callback(null, new Uint8Array(evt.target.result));
     };
-    reader.onerror = function(err) {
+    reader.onerror = function (err) {
       callback(err);
     };
     reader.readAsArrayBuffer(blob);
@@ -128,14 +132,16 @@ DataMan.prototype.getBinary = function dataManGetBinary(start, end, callback) {
         var size = blob.size;
         // Return the requested chunk of binary data
         if (start >= size) {
-          callback(new Error("DataMan.getBinary: start position beyond end of data (" + size + ")"));
+          callback(
+            new Error("DataMan.getBinary: start position beyond end of data (" + size + ")"),
+          );
           return;
         }
         end = Math.min(size, end);
 
         var slice = blob.slice || blob.webkitSlice || blob.mozSlice;
-        if (typeof slice === 'undefined') {
-          callback(new Error('Browser does not support File.slice'));
+        if (typeof slice === "undefined") {
+          callback(new Error("Browser does not support File.slice"));
           return;
         }
 
@@ -146,7 +152,6 @@ DataMan.prototype.getBinary = function dataManGetBinary(start, end, callback) {
       }
     }
   });
-
 };
 
 /** @method DataMan.prototype.saveAs
@@ -161,11 +166,12 @@ DataMan.prototype.getBinary = function dataManGetBinary(start, end, callback) {
 DataMan.prototype.saveAs = function dataManSaveAs(filename) {
   var self = this;
 
-  if (typeof window === "undefined")
-    throw new Error("window must be defined to use saveLocal");
+  if (typeof window === "undefined") throw new Error("window must be defined to use saveLocal");
 
   if (!window.saveAs) {
-    console.warn('DataMan.saveAs: window.saveAs not supported by this browser - add cfs-filesaver package');
+    console.warn(
+      "DataMan.saveAs: window.saveAs not supported by this browser - add cfs-filesaver package",
+    );
     return;
   }
 
@@ -191,8 +197,7 @@ DataMan.prototype.getDataUri = function dataManGetDataUri(callback) {
 
   var self = this;
 
-  if (typeof callback !== 'function')
-    throw new Error("getDataUri requires callback function");
+  if (typeof callback !== "function") throw new Error("getDataUri requires callback function");
 
   if (typeof FileReader === "undefined") {
     callback(new Error("Browser does not support FileReader"));
@@ -200,11 +205,11 @@ DataMan.prototype.getDataUri = function dataManGetDataUri(callback) {
   }
 
   var fileReader = new FileReader();
-  fileReader.onload = function(event) {
+  fileReader.onload = function (event) {
     var dataUri = event.target.result;
     callback(null, dataUri);
   };
-  fileReader.onerror = function(err) {
+  fileReader.onerror = function (err) {
     callback(err);
   };
 
@@ -243,7 +248,9 @@ DataMan.prototype.size = function dataManSize(callback) {
     }
   } else {
     if (self.url) {
-      throw new Error("On the client, DataMan.size requires a callback when getting size for a URL on the client");
+      throw new Error(
+        "On the client, DataMan.size requires a callback when getting size for a URL on the client",
+      );
     } else if (typeof self._size === "number") {
       return self._size;
     } else {
@@ -274,9 +281,10 @@ DataMan.prototype.type = function dataManType() {
  * Converts a data URI to a Blob.
  */
 function dataURItoBlob(dataURI, dataTYPE) {
-  var str = atob(dataURI.split(',')[1]), array = [];
-  for(var i = 0; i < str.length; i++) array.push(str.charCodeAt(i));
-  return new Blob([new Uint8Array(array)], {type: dataTYPE});
+  var str = atob(dataURI.split(",")[1]),
+    array = [];
+  for (var i = 0; i < str.length; i++) array.push(str.charCodeAt(i));
+  return new Blob([new Uint8Array(array)], { type: dataTYPE });
 }
 
 /**
@@ -297,6 +305,5 @@ function defaultCallback(err) {
       // Normal error, just throw error
       throw err;
     }
-
   }
 }
