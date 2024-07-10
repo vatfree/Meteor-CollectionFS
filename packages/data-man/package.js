@@ -12,7 +12,7 @@ Npm.depends({
   //request: "2.44.0",
   // We use a specific commit from a fork of "request" package for now; we need fix for
   // https://github.com/mikeal/request/issues/887 (https://github.com/CollectionFS/Meteor-CollectionFS/issues/347)
-  request: "https://github.com/joepie91/request/tarball/cf0710e376b13a7213d5690d034e2c1d93d1c38c",
+  request: "https://github.com/vatfree/request/tarball/3c0cddc7c8eb60b470e9519da85896ed7ee0081e",
   temp: "0.7.0", // for tests only
 });
 
