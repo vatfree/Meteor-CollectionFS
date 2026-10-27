@@ -113,7 +113,7 @@ FS.File.prototype.urlRelative = function(options) {
     // Add filename to end of URL if we can determine one
     var filename = options.filename || self.name({store: storeName});
     if (typeof filename === "string" && filename.length) {
-      filename = '/' + filename;
+      filename = '/' + encodeURIComponent(filename);
     } else {
       filename = '';
     }
