@@ -113,7 +113,13 @@ FS.File.prototype.urlRelative = function(options) {
     // Add filename to end of URL if we can determine one
     var filename = options.filename || self.name({store: storeName});
     if (typeof filename === "string" && filename.length) {
-      filename = '/' + encodeURIComponent(filename);
+      // Legacy imports can have a complete storage key as their name. Keep
+      // those names inside one route segment without rewriting stored files.
+      // Preserve the existing URL strings for ordinary display filenames.
+      if (/[\\/?#%]/.test(filename)) {
+        filename = encodeURIComponent(filename);
+      }
+      filename = '/' + filename;
     } else {
       filename = '';
     }
